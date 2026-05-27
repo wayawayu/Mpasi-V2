@@ -348,6 +348,7 @@ export default function App() {
 
       {/* BOTTOM NAV */}
       <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(255,255,255,0.92)",
+        zIndex: 40,
         backdropFilter: "blur(10px)", borderTop: `1px solid ${C.line}`, display: "flex",
         justifyContent: "space-around", padding: "8px 6px 12px", maxWidth: 460, margin: "0 auto" }}>
         {TABS.map((t) => {
@@ -1164,10 +1165,11 @@ function Empty({ text }) {
 function Modal({ children, onClose, title }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(74,51,64,0.4)",
-      backdropFilter: "blur(3px)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      backdropFilter: "blur(3px)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} className="rise"
         style={{ background: C.cream, width: "100%", maxWidth: 460, maxHeight: "92vh", overflowY: "auto",
-          borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: "20px 18px 30px" }}>
+          borderTopLeftRadius: 26, borderTopRightRadius: 26,
+          padding: "20px 18px calc(40px + env(safe-area-inset-bottom, 0px))" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 className="fr" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{title}</h2>
           <button onClick={onClose} style={{ border: "none", background: C.white, borderRadius: 11, width: 36, height: 36,
