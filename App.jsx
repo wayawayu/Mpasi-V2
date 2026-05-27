@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend
+  ResponsiveContainer, Legend, ComposedChart, Area
 } from "recharts";
 
 /* ─────────────────────────  THEME  ───────────────────────── */
@@ -90,6 +90,54 @@ const IMMUN = [
   { age:"12 bln", name:"Hepatitis A", note:"Dosis pertama", wajib:false },
   { age:"12 bln", name:"PCV Booster", note:"Penguat", wajib:true },
 ];
+
+/* ─────────────────────────  WHO GROWTH STANDARDS  ───────────────────────── */
+/* Sumber: WHO Child Growth Standards (Simplified Field Tables, z-scores).
+   Tiap baris: [bulan, -3SD, -2SD, median, +2SD, +3SD]. Usia 0-12 bulan. */
+const WHO = {
+  weight: {
+    boys: [
+      [0,2.1,2.5,3.3,4.4,5.0],[1,2.9,3.4,4.5,5.8,6.6],[2,3.8,4.3,5.6,7.1,8.0],
+      [3,4.4,5.0,6.4,8.0,9.0],[4,4.9,5.6,7.0,8.7,9.7],[5,5.3,6.0,7.5,9.3,10.4],
+      [6,5.7,6.4,7.9,9.8,10.9],[7,5.9,6.7,8.3,10.3,11.4],[8,6.2,6.9,8.6,10.7,11.9],
+      [9,6.4,7.1,8.9,11.0,12.3],[10,6.6,7.4,9.2,11.4,12.7],[11,6.8,7.6,9.4,11.7,13.0],
+      [12,6.9,7.7,9.6,12.0,13.3],
+    ],
+    girls: [
+      [0,2.0,2.4,3.2,4.2,4.8],[1,2.7,3.2,4.2,5.5,6.2],[2,3.4,3.9,5.1,6.6,7.5],
+      [3,4.0,4.5,5.8,7.5,8.5],[4,4.4,5.0,6.4,8.2,9.3],[5,4.8,5.4,6.9,8.8,10.0],
+      [6,5.1,5.7,7.3,9.3,10.6],[7,5.3,6.0,7.6,9.8,11.1],[8,5.6,6.3,7.9,10.2,11.6],
+      [9,5.8,6.5,8.2,10.5,12.0],[10,5.9,6.7,8.5,10.9,12.4],[11,6.1,6.9,8.7,11.2,12.8],
+      [12,6.3,7.0,8.9,11.5,13.1],
+    ],
+  },
+  height: { /* length-for-age (cm) */
+    boys: [
+      [0,44.2,46.1,49.9,53.7,55.6],[1,48.9,50.8,54.7,58.6,60.6],[2,52.4,54.4,58.4,62.4,64.4],
+      [3,55.3,57.3,61.4,65.5,67.6],[4,57.6,59.7,63.9,68.0,70.1],[5,59.6,61.7,65.9,70.1,72.2],
+      [6,61.2,63.3,67.6,71.9,74.0],[7,62.7,64.8,69.2,73.5,75.7],[8,64.0,66.2,70.6,75.0,77.2],
+      [9,65.2,67.5,72.0,76.5,78.7],[10,66.4,68.7,73.3,77.9,80.1],[11,67.6,69.9,74.5,79.2,81.5],
+      [12,68.6,71.0,75.7,80.5,82.9],
+    ],
+    girls: [
+      [0,43.6,45.4,49.1,52.9,54.7],[1,47.8,49.8,53.7,57.6,59.5],[2,51.0,53.0,57.1,61.1,63.2],
+      [3,53.5,55.6,59.8,64.0,66.1],[4,55.6,57.8,62.1,66.4,68.6],[5,57.4,59.6,64.0,68.5,70.7],
+      [6,58.9,61.2,65.7,70.3,72.5],[7,60.3,62.7,67.3,71.9,74.2],[8,61.7,64.0,68.7,73.5,75.8],
+      [9,62.9,65.3,70.1,75.0,77.4],[10,64.1,66.5,71.5,76.4,78.9],[11,65.2,67.7,72.8,77.8,80.3],
+      [12,66.3,68.9,74.0,79.2,81.7],
+    ],
+  },
+};
+function zState(value, row) {
+  // row = [month,-3,-2,median,+2,+3]; classify value
+  if (value == null || isNaN(value) || !row) return null;
+  const [, m3, m2, med, p2, p3] = row;
+  if (value < m3) return { key: "low2", label: "Sangat di bawah", color: "#C0392B" };
+  if (value < m2) return { key: "low1", label: "Di bawah normal", color: "#E67E22" };
+  if (value > p3) return { key: "high2", label: "Sangat di atas", color: "#C0392B" };
+  if (value > p2) return { key: "high1", label: "Di atas normal", color: "#E67E22" };
+  return { key: "ok", label: "Normal (on-track)", color: "#2E7D32", median: med };
+}
 
 const MILESTONES = [
   { age:"6 bln", text:"Duduk dgn bantuan, berguling, meraih benda, babbling (ba-ba)" },
@@ -185,22 +233,29 @@ function fmtTanggal(iso) {
   return d.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
 }
 
-/* persistent state hook — uses browser localStorage (works fully standalone) */
+/* persistent state hook */
 function usePersist(key, initial) {
-  const [val, setVal] = useState(() => {
-    try {
-      const r = localStorage.getItem(key);
-      return r != null ? JSON.parse(r) : initial;
-    } catch (e) { return initial; }
-  });
+  const [val, setVal] = useState(initial);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await window.storage.get(key);
+        if (live && r && r.value != null) setVal(JSON.parse(r.value));
+      } catch (e) {}
+      if (live) setReady(true);
+    })();
+    return () => { live = false; };
+  }, [key]);
   const update = (next) => {
     setVal((prev) => {
       const resolved = typeof next === "function" ? next(prev) : next;
-      try { localStorage.setItem(key, JSON.stringify(resolved)); } catch (e) {}
+      (async () => { try { await window.storage.set(key, JSON.stringify(resolved)); } catch (e) {} })();
       return resolved;
     });
   };
-  return [val, update, true];
+  return [val, update, ready];
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -222,7 +277,7 @@ const Field = ({ label, ...p }) => (
 /* ─────────────────────────  APP  ───────────────────────── */
 export default function App() {
   const [tab, setTab] = useState("home");
-  const [baby, setBaby, babyReady] = usePersist("mpasi:baby", { name: "", birthDate: "" });
+  const [baby, setBaby, babyReady] = usePersist("mpasi:baby", { name: "", birthDate: "", gender: "boys" });
   const [logs, setLogs] = usePersist("mpasi:logs", []);
   const [growth, setGrowth] = usePersist("mpasi:growth", []);
   const [immun, setImmun] = usePersist("mpasi:immun", {});
@@ -287,7 +342,7 @@ export default function App() {
         {tab === "home" && <HomeTab {...{ baby, setBaby, ageNow, stageNow, logs, quote, setTab, allergy, setAllergy }} />}
         {tab === "log" && <LogTab {...{ logs, setLogs, baby, ageNow, allergy }} />}
         {tab === "menu" && <MenuTab stageNow={stageNow} allergy={allergy} />}
-        {tab === "growth" && <GrowthTab {...{ growth, setGrowth, immun, setImmun }} />}
+        {tab === "growth" && <GrowthTab {...{ growth, setGrowth, immun, setImmun, baby }} />}
         {tab === "sleep" && <SleepTab {...{ sleep, setSleep }} />}
       </div>
 
@@ -357,6 +412,17 @@ function HomeTab({ baby, setBaby, ageNow, stageNow, logs, quote, setTab, allergy
               onChange={(e) => setBaby({ ...baby, name: e.target.value })} />
             <Field label="Tanggal Lahir Bayi" type="date" value={baby.birthDate}
               onChange={(e) => setBaby({ ...baby, birthDate: e.target.value })} />
+            <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.plum2, marginBottom: 6 }}>Jenis Kelamin (untuk kurva WHO)</span>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              {[["boys", "👦 Laki-laki"], ["girls", "👧 Perempuan"]].map(([g, lbl]) => (
+                <button key={g} onClick={() => setBaby({ ...baby, gender: g })} style={{ flex: 1,
+                  padding: "10px 4px", borderRadius: 12, border: `1.5px solid ${baby.gender === g ? C.rose : C.line}`,
+                  background: baby.gender === g ? C.roseSoft : C.white, fontSize: 13, fontWeight: 700,
+                  color: C.plum, cursor: "pointer", fontFamily: "inherit" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
             <p style={{ fontSize: 11.5, color: C.plum2, margin: "2px 0 0" }}>
               💡 Cukup isi sekali — usia & tahap MPASI akan terhitung otomatis.
             </p>
@@ -499,6 +565,18 @@ const Stat = ({ label, value, bg, fg }) => (
   <div style={{ flex: 1, background: bg, borderRadius: 14, padding: "10px 12px" }}>
     <div style={{ fontSize: 11, color: C.plum2, fontWeight: 600 }}>{label}</div>
     <div style={{ fontSize: 15, fontWeight: 700, color: fg }}>{value}</div>
+  </div>
+);
+const StatusRow = ({ label, v, state }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0" }}>
+    <div style={{ width: 10, height: 10, borderRadius: "50%", background: state.color, flexShrink: 0 }} />
+    <div style={{ flex: 1, fontSize: 13 }}>
+      <b>{label}:</b> {v}
+    </div>
+    <span style={{ fontSize: 11.5, fontWeight: 700, color: state.color, background: state.color + "1A",
+      padding: "4px 10px", borderRadius: 10 }}>
+      {state.key === "ok" ? "✅ " : "⚠️ "}{state.label}
+    </span>
   </div>
 );
 
@@ -795,59 +873,125 @@ const Tag = ({ children, bg, fg }) => (
 );
 
 /* ─────────────────────────  GROWTH  ───────────────────────── */
-function GrowthTab({ growth, setGrowth, immun, setImmun }) {
+function GrowthTab({ growth, setGrowth, immun, setImmun, baby = { gender: "boys" } }) {
   const [open, setOpen] = useState(false);
-  const data = useMemo(() => [...growth].sort((a, b) => a.month - b.month)
-    .map((g) => ({ ...g, label: `${g.month} bln` })), [growth]);
+  const [metric, setMetric] = useState("weight"); // weight | height
+  const gender = baby.gender === "girls" ? "girls" : "boys";
+
+  // Build chart data merging WHO band (per month 0-12) with child's entries
+  const chartData = useMemo(() => {
+    const table = WHO[metric][gender];
+    const byMonth = {};
+    growth.forEach((g) => { byMonth[+g.month] = g; });
+    return table.map((row) => {
+      const [mo, , m2, med, p2] = row;
+      const g = byMonth[mo];
+      return {
+        month: mo,
+        label: `${mo}`,
+        bandLow: m2,            // -2SD
+        bandSpan: +(p2 - m2).toFixed(2), // healthy band thickness (stacked on bandLow)
+        median: med,
+        value: g ? +g[metric] || null : null,
+      };
+    });
+  }, [growth, metric, gender]);
+
+  // Latest entry interpretation
+  const latest = useMemo(() => {
+    if (!growth.length) return null;
+    const g = [...growth].sort((a, b) => b.month - a.month)[0];
+    const wRow = WHO.weight[gender].find((r) => r[0] === +g.month);
+    const hRow = WHO.height[gender].find((r) => r[0] === +g.month);
+    return {
+      g,
+      weight: g.weight ? zState(+g.weight, wRow) : null,
+      height: g.height ? zState(+g.height, hRow) : null,
+    };
+  }, [growth, gender]);
+
+  const metricLabel = metric === "weight" ? "Berat Badan (kg)" : "Tinggi Badan (cm)";
+  const childColor = metric === "weight" ? C.roseDk : C.sageDk;
+  const childFill = metric === "weight" ? C.rose : C.sage;
 
   return (
     <div className="fade">
-      <SectionTitle title="Tumbuh Kembang" sub="Grafik, imunisasi & milestone" />
+      <SectionTitle title="Tumbuh Kembang" sub="Kurva WHO, imunisasi & milestone" />
 
-      {data.length >= 1 ? (
-        <Card style={{ marginBottom: 14, padding: "16px 8px 8px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.plum, margin: "0 10px 8px" }}>
-            📈 Berat Badan (kg)
+      {/* On-track status card */}
+      {latest && (latest.weight || latest.height) && (
+        <Card style={{ marginBottom: 14, padding: 16 }}>
+          <div style={{ fontSize: 12.5, color: C.plum2, fontWeight: 600, marginBottom: 10 }}>
+            📍 Status di usia {latest.g.month} bulan (dibanding standar WHO {gender === "girls" ? "anak perempuan" : "anak laki-laki"})
           </div>
-          <ResponsiveContainer width="100%" height={170}>
-            <LineChart data={data} margin={{ top: 5, right: 16, left: -18, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 4" stroke={C.line} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
-              <Tooltip contentStyle={{ borderRadius: 12, border: `1px solid ${C.line}`, fontSize: 12 }} />
-              <Line type="monotone" dataKey="weight" name="BB (kg)" stroke={C.roseDk} strokeWidth={3}
-                dot={{ r: 4, fill: C.rose, strokeWidth: 0 }} activeDot={{ r: 6 }} />
-            </LineChart>
-          </ResponsiveContainer>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.plum, margin: "10px 10px 8px" }}>
-            📏 Tinggi & Lingkar Kepala (cm)
-          </div>
-          <ResponsiveContainer width="100%" height={170}>
-            <LineChart data={data} margin={{ top: 5, right: 16, left: -18, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 4" stroke={C.line} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
-              <Tooltip contentStyle={{ borderRadius: 12, border: `1px solid ${C.line}`, fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="height" name="Tinggi" stroke={C.sageDk} strokeWidth={3}
-                dot={{ r: 4, fill: C.sage, strokeWidth: 0 }} />
-              <Line type="monotone" dataKey="head" name="Lingkar Kepala" stroke={C.lilac} strokeWidth={3}
-                dot={{ r: 4, fill: C.lilac, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          {latest.weight && (
+            <StatusRow label="Berat badan" v={`${latest.g.weight} kg`} state={latest.weight} />
+          )}
+          {latest.height && (
+            <StatusRow label="Tinggi badan" v={`${latest.g.height} cm`} state={latest.height} />
+          )}
+          {(latest.weight?.key !== "ok" || latest.height?.key !== "ok") &&
+           (latest.weight || latest.height) && (
+            <div style={{ marginTop: 10, background: "#FFF4E5", borderRadius: 11, padding: "10px 12px",
+              fontSize: 11.5, color: "#92400E", lineHeight: 1.5 }}>
+              ⚠️ Ada indikator di luar rentang normal. Ini bukan diagnosis — tren beberapa bulan lebih penting
+              daripada satu titik. Sebaiknya diskusikan dengan dokter anak ya, Bunda.
+            </div>
+          )}
         </Card>
-      ) : (
-        <Empty text="Tambahkan data berat & tinggi badan untuk melihat grafik pertumbuhan 📈" />
       )}
+
+      {/* Metric toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {[["weight", "⚖️ Berat Badan"], ["height", "📏 Tinggi Badan"]].map(([m, lbl]) => (
+          <button key={m} onClick={() => setMetric(m)} style={{ flex: 1, padding: "9px 4px", borderRadius: 12,
+            border: "none", background: metric === m ? C.sageDk : C.white,
+            color: metric === m ? "#fff" : C.plum2, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+            fontFamily: "inherit", boxShadow: metric === m ? "0 4px 12px rgba(110,138,102,0.3)" : "none",
+            border: metric === m ? "none" : `1px solid ${C.line}` }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      <Card style={{ marginBottom: 14, padding: "16px 8px 10px" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: C.plum, margin: "0 10px 4px" }}>
+          📈 {metricLabel} vs Kurva WHO
+        </div>
+        <div style={{ fontSize: 11, color: C.plum2, margin: "0 10px 10px" }}>
+          Area hijau = rentang normal WHO (−2SD s/d +2SD). Garis putus-putus = median.
+        </div>
+        <ResponsiveContainer width="100%" height={230}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 14, left: -16, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 4" stroke={C.line} vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false}
+              label={{ value: "Usia (bulan)", position: "insideBottom", offset: -2, fontSize: 10, fill: C.plum2 }} />
+            <YAxis tick={{ fontSize: 11, fill: C.plum2 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
+            <Tooltip contentStyle={{ borderRadius: 12, border: `1px solid ${C.line}`, fontSize: 12 }}
+              formatter={(val, name) => {
+                if (name === "Batas bawah normal" || name === "Rentang normal WHO") return [null, null];
+                return [val, name];
+              }} />
+            {/* healthy band: invisible base (bandLow) + visible span */}
+            <Area type="monotone" dataKey="bandLow" stackId="band" stroke="none" fill="transparent" name="Batas bawah normal" isAnimationActive={false} />
+            <Area type="monotone" dataKey="bandSpan" stackId="band" stroke="none" fill="#9DB395" fillOpacity={0.22} name="Rentang normal WHO" isAnimationActive={false} />
+            <Line type="monotone" dataKey="median" name="Median WHO" stroke={C.sageDk} strokeWidth={1.5}
+              strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="value" name="Si Kecil" stroke={childColor} strokeWidth={3}
+              connectNulls dot={{ r: 4, fill: childFill, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+            <Legend wrapperStyle={{ fontSize: 10.5 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Card>
 
       <button onClick={() => setOpen(true)} style={{ ...saveBtn, marginTop: 0, marginBottom: 18,
         background: `linear-gradient(135deg,${C.sage},${C.sageDk})`, boxShadow: "0 8px 20px rgba(110,138,102,0.3)" }}>
         <Plus size={19} /> Tambah Data Bulan Ini
       </button>
 
-      {data.length > 0 && (
+      {growth.length > 0 && (
         <Card style={{ marginBottom: 16, padding: 0, overflow: "hidden" }}>
-          {data.slice().reverse().map((g, i) => (
+          {[...growth].sort((a, b) => b.month - a.month).map((g, i) => (
             <div key={g.id} style={{ display: "flex", alignItems: "center", padding: "11px 15px",
               borderTop: i ? `1px solid ${C.cream2}` : "none" }}>
               <div style={{ width: 40, fontWeight: 700, color: C.sageDk, fontSize: 13 }}>{g.month}bl</div>
