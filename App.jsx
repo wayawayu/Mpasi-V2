@@ -233,29 +233,22 @@ function fmtTanggal(iso) {
   return d.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
 }
 
-/* persistent state hook */
+/* persistent state hook — uses browser localStorage (works fully standalone) */
 function usePersist(key, initial) {
-  const [val, setVal] = useState(initial);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const r = await window.storage.get(key);
-        if (live && r && r.value != null) setVal(JSON.parse(r.value));
-      } catch (e) {}
-      if (live) setReady(true);
-    })();
-    return () => { live = false; };
-  }, [key]);
+  const [val, setVal] = useState(() => {
+    try {
+      const r = localStorage.getItem(key);
+      return r != null ? JSON.parse(r) : initial;
+    } catch (e) { return initial; }
+  });
   const update = (next) => {
     setVal((prev) => {
       const resolved = typeof next === "function" ? next(prev) : next;
-      (async () => { try { await window.storage.set(key, JSON.stringify(resolved)); } catch (e) {} })();
+      try { localStorage.setItem(key, JSON.stringify(resolved)); } catch (e) {}
       return resolved;
     });
   };
-  return [val, update, ready];
+  return [val, update, true];
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -719,8 +712,10 @@ function LogForm({ baby, allergy = { ids: [] }, onClose, onSave }) {
     );
   };
 
+  const isDirty = Object.values(f).some((v) => String(v || "").trim() !== "");
+
   return (
-    <Modal onClose={onClose} title="Catat MPASI">
+    <Modal onClose={onClose} title="Catat MPASI" dirty={isDirty}>
       <Field label="Tanggal" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       {ageOnDate && !ageOnDate.invalid && (
         <div style={{ fontSize: 12, color: C.sageDk, fontWeight: 600, margin: "-4px 0 12px" }}>
@@ -1065,8 +1060,9 @@ function GrowthTab({ growth, setGrowth, immun, setImmun, baby = { gender: "boys"
 function GrowthForm({ onClose, onSave }) {
   const [f, setF] = useState({ month: "", weight: "", height: "", head: "", note: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const isDirty = Object.values(f).some((v) => String(v || "").trim() !== "");
   return (
-    <Modal onClose={onClose} title="Data Pertumbuhan">
+    <Modal onClose={onClose} title="Data Pertumbuhan" dirty={isDirty}>
       <Field label="Usia (bulan)" type="number" value={f.month} onChange={set("month")} placeholder="6" />
       <Field label="Berat Badan (kg)" type="number" step="0.1" value={f.weight} onChange={set("weight")} placeholder="7.2" />
       <Field label="Tinggi Badan (cm)" type="number" step="0.1" value={f.height} onChange={set("height")} placeholder="65.5" />
@@ -1127,8 +1123,9 @@ const Mini = ({ ic: Ic, c, label, v }) => (
 function SleepForm({ onClose, onSave }) {
   const [f, setF] = useState({ date: todayISO(), sleepHours: "", asi: "", pump: "", wet: "", dirty: "", note: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const isDirty = ["sleepHours","asi","pump","wet","dirty","note"].some((k) => String(f[k] || "").trim() !== "");
   return (
-    <Modal onClose={onClose} title="Log Tidur, ASI & Popok">
+    <Modal onClose={onClose} title="Log Tidur, ASI & Popok" dirty={isDirty}>
       <Field label="Tanggal" type="date" value={f.date} onChange={set("date")} />
       <Field label="🌙 Total Tidur (jam)" type="number" step="0.5" value={f.sleepHours} onChange={set("sleepHours")} placeholder="13" />
       <Field label="🍼 ASI / Sufor (berapa kali)" type="number" value={f.asi} onChange={set("asi")} placeholder="8" />
@@ -1162,9 +1159,11 @@ function Empty({ text }) {
     </Card>
   );
 }
-function Modal({ children, onClose, title }) {
+function Modal({ children, onClose, title, dirty = false }) {
+  const [confirming, setConfirming] = useState(false);
+  const tryClose = () => { dirty ? setConfirming(true) : onClose(); };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(74,51,64,0.4)",
+    <div onClick={tryClose} style={{ position: "fixed", inset: 0, background: "rgba(74,51,64,0.4)",
       backdropFilter: "blur(3px)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} className="rise"
         style={{ background: C.cream, width: "100%", maxWidth: 460, maxHeight: "92vh", overflowY: "auto",
@@ -1172,13 +1171,43 @@ function Modal({ children, onClose, title }) {
           padding: "20px 18px calc(40px + env(safe-area-inset-bottom, 0px))" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 className="fr" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{title}</h2>
-          <button onClick={onClose} style={{ border: "none", background: C.white, borderRadius: 11, width: 36, height: 36,
+          <button onClick={tryClose} style={{ border: "none", background: C.white, borderRadius: 11, width: 36, height: 36,
             display: "grid", placeItems: "center", cursor: "pointer", color: C.plum }}>
             <X size={19} />
           </button>
         </div>
         {children}
       </div>
+
+      {confirming && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", inset: 0,
+          background: "rgba(74,51,64,0.55)", zIndex: 200, display: "flex",
+          alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={(e) => e.stopPropagation()} className="rise"
+            style={{ background: "#fff", borderRadius: 20, padding: 22, maxWidth: 340, width: "100%",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+            <h3 className="fr" style={{ margin: "0 0 6px", fontSize: 17, fontWeight: 700, color: C.plum }}>
+              Catatan belum disimpan
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: 13.5, color: C.plum2, lineHeight: 1.5 }}>
+              Bunda sudah mengisi sebagian data. Kalau tutup sekarang, isinya akan hilang. Mau lanjut isi atau buang?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setConfirming(false)} style={{ flex: 1, border: `1.5px solid ${C.line}`,
+                background: "#fff", color: C.plum, fontSize: 13.5, fontWeight: 700, padding: "11px",
+                borderRadius: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                Lanjut Isi
+              </button>
+              <button onClick={() => { setConfirming(false); onClose(); }} style={{ flex: 1, border: "none",
+                background: C.roseDk, color: "#fff", fontSize: 13.5, fontWeight: 700, padding: "11px",
+                borderRadius: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                Buang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
